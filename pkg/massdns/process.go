@@ -14,6 +14,7 @@ import (
 
 	"github.com/projectdiscovery/gologger"
 	"github.com/projectdiscovery/shuffledns/internal/store"
+	"github.com/projectdiscovery/shuffledns/internal/wildcardstore"
 	"github.com/projectdiscovery/shuffledns/pkg/parser"
 	"github.com/remeh/sizedwaitgroup"
 	"github.com/rs/xid"
@@ -39,6 +40,8 @@ func (c *Client) Process() error {
 	// Create a store for storing ip metadata
 	shstore := store.New()
 	defer shstore.Close()
+
+	wstore := wildcardstore.New()
 
 	// Set the correct target file
 	massDNSOutput := path.Join(c.config.TempDir, xid.New().String())
@@ -68,14 +71,22 @@ func (c *Client) Process() error {
 	// Perform wildcard filtering only if domain name has been specified
 	if c.config.Domain != "" {
 		gologger.Infof("Started removing wildcards records\n")
-		err = c.filterWildcards(shstore)
+		err = c.filterWildcards(shstore, wstore)
 		if err != nil {
 			return fmt.Errorf("could not parse massdns output: %w", err)
 		}
+		for wildcardDomain := range wstore.Domain {
+
+			gologger.Infof("Detected wildcard: *.%s\n", wildcardDomain)
+		}
+
 		gologger.Infof("Wildcard removal completed\n")
 	}
 
 	gologger.Infof("Finished enumeration, started writing output\n")
+
+	// Write wildcard domains
+	c.writeWildcardsFile(wstore)
 
 	// Write the final elaborated list out
 	return c.writeOutput(shstore)
@@ -133,7 +144,7 @@ func (c *Client) parseMassDNSOutput(output string, store *store.Store) error {
 	return nil
 }
 
-func (c *Client) filterWildcards(st *store.Store) error {
+func (c *Client) filterWildcards(st *store.Store, wst *wildcardstore.WildcardStore) error {
 	// Start to work in parallel on wildcards
 	wildcardWg := sizedwaitgroup.New(c.config.WildcardsThreads)
 
@@ -154,7 +165,7 @@ func (c *Client) filterWildcards(st *store.Store) error {
 				defer wildcardWg.Done()
 
 				for host := range record.Hostnames {
-					isWildcard, ips := c.wildcardResolver.LookupHost(host)
+					isWildcard, ips, wildcardDomain := c.wildcardResolver.LookupHost(host)
 					if len(ips) > 0 {
 						c.wildcardIPMutex.Lock()
 						for ip := range ips {
@@ -168,6 +179,7 @@ func (c *Client) filterWildcards(st *store.Store) error {
 						c.wildcardIPMutex.Lock()
 						// we also mark the original ip as wildcard, since at least once it resolved to this host
 						c.wildcardIPMap[record.IP] = struct{}{}
+						c.wildcardDomainMap[wildcardDomain] = struct{}{}
 						c.wildcardIPMutex.Unlock()
 						break
 					}
@@ -183,6 +195,10 @@ func (c *Client) filterWildcards(st *store.Store) error {
 		st.Delete(wildcardIP)
 	}
 
+	// save all wildcard domains
+	for wildcardDomain := range c.wildcardDomainMap {
+		wst.New(wildcardDomain)
+	}
 	return nil
 }
 
@@ -222,6 +238,48 @@ func (c *Client) writeOutput(store *store.Store) error {
 			gologger.Silentf("%s", data)
 			buffer.Reset()
 		}
+	}
+
+	// Close the files and return
+	if output != nil {
+		w.Flush()
+		output.Close()
+	}
+	return nil
+}
+
+func (c *Client) writeWildcardsFile(store *wildcardstore.WildcardStore) error {
+	// Write the unique deduplicated output to the file
+	var output *os.File
+	var w *bufio.Writer
+	var err error
+
+	if c.config.WildcardDomainsFile != "" {
+		output, err = os.Create(c.config.WildcardDomainsFile)
+		if err != nil {
+			return fmt.Errorf("could not create wildcard domain file: %v", err)
+		}
+		w = bufio.NewWriter(output)
+	}
+
+	buffer := &strings.Builder{}
+	uniqueMap := make(map[string]struct{})
+
+	for wdomain := range store.Domain {
+		// Skip if we already printed this subdomain once
+		if _, ok := uniqueMap[wdomain]; ok {
+			continue
+		}
+		uniqueMap[wdomain] = struct{}{}
+
+		buffer.WriteString(wdomain)
+		buffer.WriteString("\n")
+		data := buffer.String()
+
+		if output != nil {
+			w.WriteString(data)
+		}
+		buffer.Reset()
 	}
 
 	// Close the files and return

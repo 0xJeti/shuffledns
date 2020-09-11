@@ -13,7 +13,8 @@ type Client struct {
 	wildcardIPMap   map[string]struct{}
 	wildcardIPMutex *sync.RWMutex
 
-	wildcardResolver *wildcards.Resolver
+	wildcardResolver  *wildcards.Resolver
+	wildcardDomainMap map[string]struct{}
 }
 
 // Config contains configuration options for the massdns client
@@ -34,6 +35,8 @@ type Config struct {
 	TempDir string
 	// OutputFile is the file to use for massdns output
 	OutputFile string
+	// WildcardDomainsFile is the file to use for wildcard domains output
+	WildcardDomainsFile string
 	// WildcardsThreads is the number of wildcards concurrent threads
 	WildcardsThreads int
 	// MassdnsRaw perform wildcards filtering from an existing massdns output file
@@ -64,8 +67,9 @@ func New(config Config) (*Client, error) {
 	return &Client{
 		config: config,
 
-		wildcardIPMap:    make(map[string]struct{}),
-		wildcardIPMutex:  &sync.RWMutex{},
-		wildcardResolver: resolver,
+		wildcardIPMap:     make(map[string]struct{}),
+		wildcardIPMutex:   &sync.RWMutex{},
+		wildcardResolver:  resolver,
+		wildcardDomainMap: make(map[string]struct{}),
 	}, nil
 }
