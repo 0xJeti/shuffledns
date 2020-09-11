@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0xJeti/shuffledns/internal/store"
+	"github.com/0xJeti/shuffledns/internal/wildcardstore"
+	"github.com/0xJeti/shuffledns/pkg/parser"
 	"github.com/projectdiscovery/gologger"
-	"github.com/projectdiscovery/shuffledns/internal/store"
-	"github.com/projectdiscovery/shuffledns/internal/wildcardstore"
-	"github.com/projectdiscovery/shuffledns/pkg/parser"
 	"github.com/remeh/sizedwaitgroup"
 	"github.com/rs/xid"
 )

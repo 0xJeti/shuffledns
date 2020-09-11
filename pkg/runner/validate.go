@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/0xJeti/shuffledns/pkg/massdns"
 	"github.com/projectdiscovery/gologger"
-	"github.com/projectdiscovery/shuffledns/pkg/massdns"
 )
 
 // validateOptions validates the configuration options passed

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0xJeti/shuffledns/pkg/massdns"
 	"github.com/projectdiscovery/gologger"
-	"github.com/projectdiscovery/shuffledns/pkg/massdns"
 	"github.com/rs/xid"
 )
 
