@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0xJeti/shuffledns/internal/nxaliasstore"
 	"github.com/0xJeti/shuffledns/internal/store"
 	"github.com/0xJeti/shuffledns/internal/wildcardstore"
 	"github.com/0xJeti/shuffledns/pkg/parser"
@@ -42,6 +43,7 @@ func (c *Client) Process() error {
 	defer shstore.Close()
 
 	wstore := wildcardstore.New()
+	nstore := nxaliasstore.New()
 
 	// Set the correct target file
 	massDNSOutput := path.Join(c.config.TempDir, xid.New().String())
@@ -61,7 +63,7 @@ func (c *Client) Process() error {
 
 	gologger.Infof("Started parsing massdns output\n")
 
-	err = c.parseMassDNSOutput(massDNSOutput, shstore)
+	err = c.parseMassDNSOutput(massDNSOutput, shstore, nstore)
 	if err != nil {
 		return fmt.Errorf("could not parse massdns output: %w", err)
 	}
@@ -88,6 +90,9 @@ func (c *Client) Process() error {
 	// Write wildcard domains
 	c.writeWildcardsFile(wstore)
 
+	// Write nx aliases file
+	c.writeNxAliasFile(nstore)
+
 	// Write the final elaborated list out
 	return c.writeOutput(shstore)
 }
@@ -111,7 +116,7 @@ func (c *Client) runMassDNS(output string, store *store.Store) error {
 	return nil
 }
 
-func (c *Client) parseMassDNSOutput(output string, store *store.Store) error {
+func (c *Client) parseMassDNSOutput(output string, store *store.Store, nxstore *nxaliasstore.NxAliasStore) error {
 	massdnsOutput, err := os.Open(output)
 	if err != nil {
 		return fmt.Errorf("could not open massdns output file: %w", err)
@@ -119,7 +124,12 @@ func (c *Client) parseMassDNSOutput(output string, store *store.Store) error {
 	defer massdnsOutput.Close()
 
 	// at first we need the full structure in memory to elaborate it in parallell
-	err = parser.Parse(massdnsOutput, func(domain string, ip []string) {
+	err = parser.Parse(massdnsOutput, func(domain string, ip []string, nxalias string) {
+		if nxalias != "" {
+			// Store NX cname alias
+			nxstore.New(domain, nxalias)
+
+		}
 		for _, ip := range ip {
 			// Check if ip exists in the store. If not,
 			// add the ip to the map and continue with the next ip.
@@ -273,6 +283,43 @@ func (c *Client) writeWildcardsFile(store *wildcardstore.WildcardStore) error {
 		uniqueMap[wdomain] = struct{}{}
 
 		buffer.WriteString(wdomain)
+		buffer.WriteString("\n")
+		data := buffer.String()
+
+		if output != nil {
+			w.WriteString(data)
+		}
+		buffer.Reset()
+	}
+
+	// Close the files and return
+	if output != nil {
+		w.Flush()
+		output.Close()
+	}
+	return nil
+}
+
+func (c *Client) writeNxAliasFile(nxstore *nxaliasstore.NxAliasStore) error {
+	var output *os.File
+	var w *bufio.Writer
+	var err error
+
+	if c.config.NxAliasFile != "" {
+		output, err = os.Create(c.config.NxAliasFile)
+		if err != nil {
+			return fmt.Errorf("could not create NX alias file: %v", err)
+		}
+		w = bufio.NewWriter(output)
+	}
+
+	buffer := &strings.Builder{}
+
+	for domain, alias := range nxstore.NxAlias {
+
+		buffer.WriteString(domain)
+		buffer.WriteString(":")
+		buffer.WriteString(alias)
 		buffer.WriteString("\n")
 		data := buffer.String()
 

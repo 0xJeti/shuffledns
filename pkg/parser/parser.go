@@ -10,7 +10,7 @@ import (
 // the parser returning the results found.
 // NOTE: Callbacks are not thread safe and are blocking in nature
 // and should be used as such.
-type Callback func(domain string, ip []string)
+type Callback func(domain string, ip []string, nxalias string)
 
 // Parse parses the massdns output returning the found
 // domain and ip pair to a callback function.
@@ -24,8 +24,9 @@ func Parse(reader io.Reader, callback Callback) error {
 		nsStart    bool
 
 		// Result variables to store the results
-		domain string
-		ip     []string
+		domain  string
+		ip      []string
+		nxalias string
 	)
 
 	// Parse the input line by line and act on what the line means
@@ -43,8 +44,8 @@ func Parse(reader io.Reader, callback Callback) error {
 		if text == "" {
 			if domain != "" {
 				cnameStart, nsStart = false, false
-				callback(domain, ip)
-				domain, ip = "", nil
+				callback(domain, ip, nxalias)
+				domain, ip, nxalias = "", nil, ""
 			}
 			continue
 		} else {
@@ -75,17 +76,24 @@ func Parse(reader io.Reader, callback Callback) error {
 					domain = strings.TrimSuffix(parts[0], ".")
 					cnameStart = true
 				}
+
+				// Use the alias from last cname in a chain
+				nxalias = strings.TrimSuffix(parts[2], ".")
+
 			case "A":
 				// If we have an A record, check if it's not after
 				// an NS record. If not, append it to the ips.
 				//
 				// Also if we aren't inside a CNAME block, set the domain too.
+				//
 				if !nsStart {
 					if !cnameStart && domain == "" {
 						domain = strings.TrimSuffix(parts[0], ".")
 					}
 					ip = append(ip, parts[2])
 				}
+				// If A record was found that means we have existing domain
+				nxalias = ""
 			}
 		}
 		continue
@@ -99,7 +107,7 @@ func Parse(reader io.Reader, callback Callback) error {
 	// Final callback to deliver the last piece of result
 	// if there's any.
 	if domain != "" {
-		callback(domain, ip)
+		callback(domain, ip, nxalias)
 	}
 	return nil
 }

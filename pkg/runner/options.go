@@ -21,6 +21,7 @@ type Options struct {
 	MassdnsPath     string // MassdnsPath contains the path to massdns binary
 	Output          string // Output is the file to write found subdomains to.
 	WildcardsOutput string // WildcardsOutput is the file to write found wildcard domains to.
+	NxAliasOutput   string // NxAliasOutput is the file to write found non-existent aliases to.
 	Silent          bool   // Silent suppresses any extra text and only writes found host:port to screen
 	Version         bool   // Version specifies if we should just show version and exit
 	Retries         int    // Retries is the number of retries for dns enumeration
@@ -46,6 +47,7 @@ func ParseOptions() *Options {
 	flag.StringVar(&options.MassdnsPath, "massdns", "", "Path to the massdns binary")
 	flag.StringVar(&options.Output, "o", "", "File to write output to (optional)")
 	flag.StringVar(&options.WildcardsOutput, "ow", "", "File to write wildcard domains to (optional)")
+	flag.StringVar(&options.NxAliasOutput, "on", "", "File to write non-existent aliases to (optional)")
 	flag.BoolVar(&options.Silent, "silent", false, "Show only subdomains in output")
 	flag.BoolVar(&options.Version, "version", false, "Show version of shuffledns")
 	flag.IntVar(&options.Retries, "retries", 5, "Number of retries for dns enumeration")
