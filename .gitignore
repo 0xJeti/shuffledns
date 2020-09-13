@@ -2,3 +2,4 @@ cmd/shuffledns/shuffledns*
 cmd/shuffledns/build.sh
 .vscode
 cmd/shuffledns/__debug_bin
+testfiles

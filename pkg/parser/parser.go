@@ -34,6 +34,9 @@ func Parse(reader io.Reader, callback Callback) error {
 	for scanner.Scan() {
 		text := scanner.Text()
 
+		// Fix a problem with leading spaces in wordlist file
+		text = strings.TrimPrefix(text, " ")
+
 		// Empty line represents a seperator between DNS reply
 		// due to `-o Snl` option set in massdns. Thus it can be
 		// interpreted as a DNS answer header.
