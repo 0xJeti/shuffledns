@@ -39,6 +39,8 @@ type Config struct {
 	WildcardDomainsFile string
 	// NxAliasFile is the file to use for nonexistent aliases output
 	NxAliasFile string
+	// RCodeFile is the file to use for error response codes output
+	RCodeFile string
 	// WildcardsThreads is the number of wildcards concurrent threads
 	WildcardsThreads int
 	// MassdnsRaw perform wildcards filtering from an existing massdns output file

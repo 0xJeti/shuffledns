@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/0xJeti/shuffledns/internal/nxaliasstore"
+	"github.com/0xJeti/shuffledns/internal/rcodestore"
 	"github.com/0xJeti/shuffledns/internal/store"
 	"github.com/0xJeti/shuffledns/internal/wildcardstore"
 	"github.com/0xJeti/shuffledns/pkg/parser"
@@ -44,6 +45,7 @@ func (c *Client) Process() error {
 
 	wstore := wildcardstore.New()
 	nstore := nxaliasstore.New()
+	rstore := rcodestore.New()
 
 	// Set the correct target file
 	massDNSOutput := path.Join(c.config.TempDir, xid.New().String())
@@ -63,7 +65,7 @@ func (c *Client) Process() error {
 
 	gologger.Infof("Started parsing massdns output\n")
 
-	err = c.parseMassDNSOutput(massDNSOutput, shstore, nstore)
+	err = c.parseMassDNSOutput(massDNSOutput, shstore, nstore, rstore)
 	if err != nil {
 		return fmt.Errorf("could not parse massdns output: %w", err)
 	}
@@ -93,6 +95,9 @@ func (c *Client) Process() error {
 	// Write nx aliases file
 	c.writeNxAliasFile(nstore)
 
+	// Write error response codes file
+	c.writeRCodeFile(rstore)
+
 	// Write the final elaborated list out
 	return c.writeOutput(shstore)
 }
@@ -105,7 +110,7 @@ func (c *Client) runMassDNS(output string, store *store.Store) error {
 	}
 	now := time.Now()
 	// Run the command on a temp file and wait for the output
-	cmd := exec.Command(c.config.MassdnsPath, []string{"-r", c.config.ResolversFile, "-o", "Snl", "-t", "A", c.config.InputFile, "-w", output, "-s", strconv.Itoa(c.config.Threads)}...)
+	cmd := exec.Command(c.config.MassdnsPath, []string{"-r", c.config.ResolversFile, "-o", "Snrl", "-t", "A", c.config.InputFile, "-w", output, "-s", strconv.Itoa(c.config.Threads)}...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	err := cmd.Run()
@@ -116,7 +121,7 @@ func (c *Client) runMassDNS(output string, store *store.Store) error {
 	return nil
 }
 
-func (c *Client) parseMassDNSOutput(output string, store *store.Store, nxstore *nxaliasstore.NxAliasStore) error {
+func (c *Client) parseMassDNSOutput(output string, store *store.Store, nxstore *nxaliasstore.NxAliasStore, rstore *rcodestore.RCodeStore) error {
 	massdnsOutput, err := os.Open(output)
 	if err != nil {
 		return fmt.Errorf("could not open massdns output file: %w", err)
@@ -124,12 +129,16 @@ func (c *Client) parseMassDNSOutput(output string, store *store.Store, nxstore *
 	defer massdnsOutput.Close()
 
 	// at first we need the full structure in memory to elaborate it in parallell
-	err = parser.Parse(massdnsOutput, func(domain string, ip []string, nxalias string) {
+	err = parser.Parse(massdnsOutput, func(domain string, ip []string, nxalias string, rcode string, resolver string) {
 		if nxalias != "" {
 			// Store NX cname alias
 			nxstore.New(domain, nxalias)
 
 		}
+		if rcode != "NOERROR" {
+			rstore.New(domain, rcode, resolver)
+		}
+
 		for _, ip := range ip {
 			// Check if ip exists in the store. If not,
 			// add the ip to the map and continue with the next ip.
@@ -320,6 +329,48 @@ func (c *Client) writeNxAliasFile(nxstore *nxaliasstore.NxAliasStore) error {
 		buffer.WriteString(domain)
 		buffer.WriteString(":")
 		buffer.WriteString(alias)
+		buffer.WriteString("\n")
+		data := buffer.String()
+
+		if output != nil {
+			w.WriteString(data)
+		}
+		buffer.Reset()
+	}
+
+	// Close the files and return
+	if output != nil {
+		w.Flush()
+		output.Close()
+	}
+	return nil
+}
+
+func (c *Client) writeRCodeFile(rstore *rcodestore.RCodeStore) error {
+	var output *os.File
+	var w *bufio.Writer
+	var err error
+
+	if c.config.RCodeFile != "" {
+		output, err = os.Create(c.config.RCodeFile)
+		if err != nil {
+			return fmt.Errorf("could not create response code file: %v", err)
+		}
+		w = bufio.NewWriter(output)
+	}
+
+	buffer := &strings.Builder{}
+
+	for domain, record := range rstore.RCode {
+
+		rcode := record.RCode
+		resolver := record.Resolver
+
+		buffer.WriteString(resolver)
+		buffer.WriteString(":")
+		buffer.WriteString(rcode)
+		buffer.WriteString(":")
+		buffer.WriteString(domain)
 		buffer.WriteString("\n")
 		data := buffer.String()
 

@@ -181,6 +181,7 @@ func (r *Runner) runMassdns(inputFile string) {
 		OutputFile:          r.options.Output,
 		WildcardDomainsFile: r.options.WildcardsOutput,
 		NxAliasFile:         r.options.NxAliasOutput,
+		RCodeFile:           r.options.RCodeOutput,
 		MassdnsRaw:          r.options.MassdnsRaw,
 		StrictWildcard:      r.options.StrictWildcard,
 	})

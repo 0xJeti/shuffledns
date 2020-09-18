@@ -10,7 +10,7 @@ import (
 // the parser returning the results found.
 // NOTE: Callbacks are not thread safe and are blocking in nature
 // and should be used as such.
-type Callback func(domain string, ip []string, nxalias string)
+type Callback func(domain string, ip []string, nxalias string, rcode string, resolver string)
 
 // Parse parses the massdns output returning the found
 // domain and ip pair to a callback function.
@@ -24,9 +24,12 @@ func Parse(reader io.Reader, callback Callback) error {
 		nsStart    bool
 
 		// Result variables to store the results
-		domain  string
-		ip      []string
-		nxalias string
+		domain   string
+		ip       []string
+		nxalias  string
+		rcode    string
+		rdomain  string
+		resolver string
 	)
 
 	// Parse the input line by line and act on what the line means
@@ -38,25 +41,38 @@ func Parse(reader io.Reader, callback Callback) error {
 		text = strings.TrimPrefix(text, " ")
 
 		// Empty line represents a seperator between DNS reply
-		// due to `-o Snl` option set in massdns. Thus it can be
+		// due to `-o Snrl` option set in massdns. Thus it can be
 		// interpreted as a DNS answer header.
 		//
 		// If we have start of a DNS answer header, set the
 		// bool state to default, and return the results to the
 		// consumer via the callback.
+		//
+		//
 		if text == "" {
-			if domain != "" {
+			if domain != "" || (rdomain != "" && rcode != "NXDOMAIN" && rcode != "NOERROR") {
 				cnameStart, nsStart = false, false
-				callback(domain, ip, nxalias)
-				domain, ip, nxalias = "", nil, ""
+				if domain == "" {
+					domain = rdomain
+				}
+				callback(domain, ip, nxalias, rcode, resolver)
+				domain, ip, nxalias, rdomain, rcode, resolver = "", nil, "", "", "", ""
 			}
 			continue
 		} else {
-			// Non empty line represents DNS answer section, we split on space,
+			// Non empty line represents DNS answer section,we split on space,
 			// iterate over all the parts, and write the answer to the struct.
 			parts := strings.Split(text, " ")
 
-			if len(parts) != 3 {
+			if len(parts) == 6 {
+				// response header: 'resolverip:53 timestamp responsecode domain.name.  A'
+
+				resolver = strings.TrimSuffix(parts[0], ":")
+				rcode = parts[2]
+				rdomain = strings.TrimSuffix(parts[3], ".")
+				continue
+			} else if len(parts) != 3 {
+				//
 				continue
 			}
 
@@ -109,8 +125,8 @@ func Parse(reader io.Reader, callback Callback) error {
 
 	// Final callback to deliver the last piece of result
 	// if there's any.
-	if domain != "" {
-		callback(domain, ip, nxalias)
+	if domain != "" || (rdomain != "" && rcode != "NXDOMAIN" && rcode != "NOERROR") {
+		callback(domain, ip, nxalias, rcode, resolver)
 	}
 	return nil
 }
