@@ -135,7 +135,7 @@ func (c *Client) parseMassDNSOutput(output string, store *store.Store, nxstore *
 			nxstore.New(domain, nxalias)
 
 		}
-		if rcode != "NOERROR" {
+		if rcode != "NOERROR" && rcode != "NXDOMAIN" {
 			rstore.New(domain, rcode, resolver)
 		}
 
